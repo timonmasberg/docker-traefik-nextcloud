@@ -1,0 +1,59 @@
+version: "3.3"
+
+services:
+  traefik:
+    image: "traefik:latest"
+    container_name: "traefik"
+    command:
+      #- "--log.level=DEBUG"
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email="
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "443:443"   # SSL
+    volumes:
+      - "./letsencrypt:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+  cloud_db:
+    image: mariadb
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: always
+    volumes:
+      - db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=
+      - MYSQL_PASSWORD=
+      - MYSQL_DATABASE=
+      - MYSQL_USER=
+
+  cloud:
+    image: nextcloud
+    container_name: "nextcloud"
+    links:
+      - cloud_db
+    volumes:
+      - nextcloud:/var/www/html
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.port=80"
+      - "traefik.http.routers.cloud.entrypoints=websecure"
+      - "traefik.http.routers.cloud.rule=Host(``)"
+      - "traefik.http.routers.cloud.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.cloud.middlewares=cloud@docker"
+      - "traefik.docker.network=webproxy"
+      - "traefik.http.middlewares.cloud.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.middlewares.cloud.headers.framedeny=true"
+      - "traefik.http.middlewares.cloud.headers.sslredirect=true"
+      - "traefik.http.middlewares.cloud.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.cloud.headers.stsPreload=true"
+      - "traefik.http.middlewares.cloud.headers.stsSeconds=15552000"
+volumes:
+  nextcloud:
+  db:
+
